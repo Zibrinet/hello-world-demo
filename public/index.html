@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TORII — Japanese Art & NFT Marketplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="nav-logo" href="#">
+        <span class="torii-icon">⛩</span>
+        <span class="logo-text">TORII</span>
+        <span class="logo-sub">市場</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#marketplace">Marketplace</a></li>
+        <li><a href="#auctions">Live Auctions</a></li>
+        <li><a href="#artists">Artists</a></li>
+        <li><a href="#drops">Drops</a></li>
+      </ul>
+      <div class="nav-actions">
+        <div class="crypto-ticker">
+          <span class="ticker-item"><span class="ticker-coin">ETH</span> <span class="ticker-price" id="eth-price">$3,241</span> <span class="ticker-change positive">+2.4%</span></span>
+          <span class="ticker-sep">|</span>
+          <span class="ticker-item"><span class="ticker-coin">SOL</span> <span class="ticker-price" id="sol-price">$187</span> <span class="ticker-change positive">+1.8%</span></span>
+        </div>
+        <button class="btn-connect" id="connect-btn" onclick="connectWallet()">
+          <span class="btn-icon">⬡</span> Connect Wallet
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-bg">
+      <div class="hero-ink"></div>
+      <div class="hero-petals" id="petals"></div>
+    </div>
+    <div class="hero-content">
+      <p class="hero-eyebrow">The Premier Platform for Japanese Digital Art</p>
+      <h1 class="hero-title">
+        <span class="hero-jp">芸術</span>
+        <span class="hero-en">Where Ancient Craft<br/>Meets Web3</span>
+      </h1>
+      <p class="hero-desc">Collect rare Japanese art from world-class artists. Bid in real-time auctions, pay with ETH, SOL, BTC, or fiat — and own a piece of living culture.</p>
+      <div class="hero-cta">
+        <button class="btn-primary" onclick="document.getElementById('auctions').scrollIntoView({behavior:'smooth'})">Explore Live Auctions</button>
+        <button class="btn-secondary" onclick="document.getElementById('artists').scrollIntoView({behavior:'smooth'})">Meet the Artists</button>
+      </div>
+      <div class="hero-stats">
+        <div class="stat">
+          <span class="stat-num">¥2.4B+</span>
+          <span class="stat-label">Total Volume</span>
+        </div>
+        <div class="stat-div"></div>
+        <div class="stat">
+          <span class="stat-num">1,200+</span>
+          <span class="stat-label">Artworks Sold</span>
+        </div>
+        <div class="stat-div"></div>
+        <div class="stat">
+          <span class="stat-num">48</span>
+          <span class="stat-label">Partner Artists</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-art">
+      <div class="art-frame">
+        <div class="art-frame-border"></div>
+        <div class="art-placeholder featured-art">
+          <div class="art-bg-pattern"></div>
+          <div class="art-overlay-text">
+            <span class="art-kanji">山</span>
+            <span class="art-kanji">水</span>
+            <span class="art-kanji">画</span>
+          </div>
+        </div>
+        <div class="art-badge live-badge">LIVE AUCTION</div>
+        <div class="art-info-bar">
+          <div>
+            <div class="art-title-sm">Fuji at Dawn #001</div>
+            <div class="art-artist-sm">by DWTML</div>
+          </div>
+          <div class="art-bid-sm">
+            <div class="bid-label">Current Bid</div>
+            <div class="bid-val">12.4 ETH</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-scroll-hint">
+      <span>Scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- LIVE AUCTIONS -->
+  <section class="section auctions-section" id="auctions">
+    <div class="section-header">
+      <div class="section-label">落札</div>
+      <h2 class="section-title">Live Auctions</h2>
+      <p class="section-desc">Real-time bidding on exclusive Japanese artworks. Auctions close in Tokyo Standard Time.</p>
+    </div>
+    <div class="auction-filters">
+      <button class="filter-btn active" onclick="filterAuctions('all', this)">All</button>
+      <button class="filter-btn" onclick="filterAuctions('painting', this)">Painting</button>
+      <button class="filter-btn" onclick="filterAuctions('calligraphy', this)">Calligraphy</button>
+      <button class="filter-btn" onclick="filterAuctions('digital', this)">Digital</button>
+      <button class="filter-btn" onclick="filterAuctions('photography', this)">Photography</button>
+    </div>
+    <div class="auction-grid" id="auction-grid">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- FEATURED ARTISTS -->
+  <section class="section artists-section" id="artists">
+    <div class="section-header">
+      <div class="section-label">芸術家</div>
+      <h2 class="section-title">Partner Artists</h2>
+      <p class="section-desc">We work exclusively with artists who push the boundaries of Japanese aesthetics — from traditional ink masters to generative digital pioneers.</p>
+    </div>
+    <div class="artists-grid" id="artists-grid">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- MARKETPLACE -->
+  <section class="section marketplace-section" id="marketplace">
+    <div class="section-header">
+      <div class="section-label">市場</div>
+      <h2 class="section-title">Marketplace</h2>
+      <p class="section-desc">Browse and buy directly. Every piece verified, every provenance tracked on-chain.</p>
+    </div>
+    <div class="marketplace-toolbar">
+      <div class="search-wrap">
+        <input class="search-input" type="text" placeholder="Search artworks, artists..." oninput="searchArtworks(this.value)" />
+        <span class="search-icon">⌕</span>
+      </div>
+      <div class="sort-wrap">
+        <select class="sort-select" onchange="sortArtworks(this.value)">
+          <option value="recent">Most Recent</option>
+          <option value="price-low">Price: Low to High</option>
+          <option value="price-high">Price: High to Low</option>
+          <option value="popular">Most Popular</option>
+        </select>
+      </div>
+    </div>
+    <div class="market-grid" id="market-grid">
+      <!-- Populated by JS -->
+    </div>
+    <div class="load-more-wrap">
+      <button class="btn-outline" onclick="loadMore()">Load More Works</button>
+    </div>
+  </section>
+
+  <!-- DROPS CALENDAR -->
+  <section class="section drops-section" id="drops">
+    <div class="section-header">
+      <div class="section-label">新着</div>
+      <h2 class="section-title">Upcoming Drops</h2>
+      <p class="section-desc">Set reminders for exclusive limited releases. First-come, first-served — or enter the whitelist.</p>
+    </div>
+    <div class="drops-list" id="drops-list">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- PAYMENT METHODS -->
+  <section class="section payment-section">
+    <div class="payment-inner">
+      <div class="section-label">決済</div>
+      <h2 class="payment-title">Pay Your Way</h2>
+      <p class="payment-desc">We accept the most trusted crypto assets and all major fiat currencies. No friction, maximum security.</p>
+      <div class="payment-grid">
+        <div class="payment-card">
+          <div class="payment-icon eth-icon">⬡</div>
+          <div class="payment-name">Ethereum</div>
+          <div class="payment-sub">ETH / ERC-20</div>
+        </div>
+        <div class="payment-card">
+          <div class="payment-icon sol-icon">◎</div>
+          <div class="payment-name">Solana</div>
+          <div class="payment-sub">SOL / SPL</div>
+        </div>
+        <div class="payment-card">
+          <div class="payment-icon btc-icon">₿</div>
+          <div class="payment-name">Bitcoin</div>
+          <div class="payment-sub">BTC / Lightning</div>
+        </div>
+        <div class="payment-card">
+          <div class="payment-icon fiat-icon">$</div>
+          <div class="payment-name">Fiat</div>
+          <div class="payment-sub">Visa / Mastercard / Wire</div>
+        </div>
+        <div class="payment-card">
+          <div class="payment-icon usdc-icon">◈</div>
+          <div class="payment-name">USDC / USDT</div>
+          <div class="payment-sub">Stablecoins</div>
+        </div>
+        <div class="payment-card">
+          <div class="payment-icon yen-icon">¥</div>
+          <div class="payment-name">JPY / USD / EUR</div>
+          <div class="payment-sub">Bank Transfer</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEWSLETTER / COMMUNITY -->
+  <section class="section community-section">
+    <div class="community-inner">
+      <div class="community-jp">共同体</div>
+      <h2 class="community-title">Join the Inner Circle</h2>
+      <p class="community-desc">Private drops, artist introductions, collector meetups in Tokyo and globally. Curated for those who understand the value of authentic Japanese art.</p>
+      <form class="newsletter-form" onsubmit="subscribeNewsletter(event)">
+        <input class="newsletter-input" type="email" placeholder="your@email.com" required />
+        <button class="btn-primary" type="submit">Apply for Access</button>
+      </form>
+      <p class="community-note">We never spam. Invitations sent quarterly to serious collectors only.</p>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">
+          <span class="torii-icon">⛩</span>
+          <span class="logo-text">TORII</span>
+        </div>
+        <p class="footer-tagline">The bridge between ancient Japanese art and the decentralized future.</p>
+        <div class="footer-socials">
+          <a href="#" class="social-link">X</a>
+          <a href="#" class="social-link">Discord</a>
+          <a href="#" class="social-link">Instagram</a>
+          <a href="#" class="social-link">Telegram</a>
+        </div>
+      </div>
+      <div class="footer-links-grid">
+        <div class="footer-col">
+          <div class="footer-col-title">Platform</div>
+          <a href="#marketplace">Marketplace</a>
+          <a href="#auctions">Live Auctions</a>
+          <a href="#drops">Drops</a>
+          <a href="#">How It Works</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Artists</div>
+          <a href="#">Apply as Artist</a>
+          <a href="#">Artist Portal</a>
+          <a href="#">Royalties</a>
+          <a href="#">Community</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Collectors</div>
+          <a href="#">My Collection</a>
+          <a href="#">Provenance</a>
+          <a href="#">Certificates</a>
+          <a href="#">Support</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+          <a href="#">Cookie Policy</a>
+          <a href="#">KYC / AML</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 TORII Market KK. All Rights Reserved. Registered in Tokyo, Japan.</span>
+      <span class="footer-chain">Secured on Ethereum & Solana</span>
+    </div>
+  </footer>
+
+  <!-- BID MODAL -->
+  <div class="modal-overlay" id="bid-modal" onclick="closeModal('bid-modal')">
+    <div class="modal" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeModal('bid-modal')">✕</button>
+      <div class="modal-header">
+        <div class="modal-badge">LIVE AUCTION</div>
+        <h3 class="modal-title" id="modal-art-title">Artwork Title</h3>
+        <p class="modal-artist" id="modal-art-artist">by Artist</p>
+      </div>
+      <div class="modal-body">
+        <div class="modal-art-preview" id="modal-art-preview"></div>
+        <div class="bid-info">
+          <div class="bid-row">
+            <span>Current Bid</span>
+            <strong id="modal-current-bid">—</strong>
+          </div>
+          <div class="bid-row">
+            <span>Your Max Bid</span>
+            <strong id="modal-next-bid">—</strong>
+          </div>
+          <div class="bid-row">
+            <span>Time Remaining</span>
+            <strong id="modal-time" class="live-time">—</strong>
+          </div>
+          <div class="bid-row">
+            <span>Bids</span>
+            <strong id="modal-bid-count">—</strong>
+          </div>
+        </div>
+        <div class="bid-currency-select">
+          <label class="currency-label">Pay with:</label>
+          <div class="currency-options">
+            <button class="currency-btn active" onclick="selectCurrency('ETH', this)">ETH</button>
+            <button class="currency-btn" onclick="selectCurrency('SOL', this)">SOL</button>
+            <button class="currency-btn" onclick="selectCurrency('BTC', this)">BTC</button>
+            <button class="currency-btn" onclick="selectCurrency('USD', this)">USD</button>
+          </div>
+        </div>
+        <div class="bid-input-wrap">
+          <input class="bid-input" type="number" id="bid-amount" placeholder="0.00" step="0.01" />
+          <span class="bid-currency-badge" id="bid-currency-badge">ETH</span>
+        </div>
+        <button class="btn-primary btn-full" onclick="placeBid()">Place Bid</button>
+        <p class="bid-note">Bids are binding. Wallet signature required. Artist royalty: 10%.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- WALLET MODAL -->
+  <div class="modal-overlay" id="wallet-modal" onclick="closeModal('wallet-modal')">
+    <div class="modal modal-sm" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeModal('wallet-modal')">✕</button>
+      <div class="modal-header">
+        <h3 class="modal-title">Connect Wallet</h3>
+        <p class="modal-artist">Choose your preferred wallet to start collecting</p>
+      </div>
+      <div class="wallet-options">
+        <button class="wallet-opt" onclick="selectWallet('MetaMask')">
+          <span class="wallet-icon">🦊</span>
+          <span>MetaMask</span>
+          <span class="wallet-arrow">→</span>
+        </button>
+        <button class="wallet-opt" onclick="selectWallet('Phantom')">
+          <span class="wallet-icon">👻</span>
+          <span>Phantom</span>
+          <span class="wallet-arrow">→</span>
+        </button>
+        <button class="wallet-opt" onclick="selectWallet('WalletConnect')">
+          <span class="wallet-icon">🔗</span>
+          <span>WalletConnect</span>
+          <span class="wallet-arrow">→</span>
+        </button>
+        <button class="wallet-opt" onclick="selectWallet('Coinbase')">
+          <span class="wallet-icon">🔵</span>
+          <span>Coinbase Wallet</span>
+          <span class="wallet-arrow">→</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
