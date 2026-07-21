@@ -151,6 +151,10 @@ class ExpenseEditorViewModel(
         _state.update { s -> s.copy(amountText = s.amountText.dropLast(1)).syncExactWithAmount() }
     }
 
+    fun clearAmount() {
+        _state.update { s -> s.copy(amountText = "").syncExactWithAmount() }
+    }
+
     fun setCurrency(code: String) {
         _state.update { s -> s.copy(amountText = "", exactSelfText = "", exactOtherText = "", currency = code) }
     }

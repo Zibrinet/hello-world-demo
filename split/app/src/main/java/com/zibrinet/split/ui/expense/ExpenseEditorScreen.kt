@@ -227,6 +227,7 @@ fun ExpenseEditorScreen(
             AmountKeypad(
                 onDigit = viewModel::appendDigit,
                 onBackspace = viewModel::backspace,
+                onClear = viewModel::clearAmount,
                 decimalEnabled = Money.fractionDigits(state.currency) > 0,
             )
 

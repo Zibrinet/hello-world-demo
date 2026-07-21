@@ -1,9 +1,12 @@
 package com.zibrinet.split.ui.navigation
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -63,10 +66,25 @@ private fun MainNavHost(navController: NavHostController = rememberNavController
         popExitTransition = { fadeOut(animationSpec = tween(180)) },
     ) {
         composable(Routes.HOME) { HomeScreen(navController) }
-        composable(Routes.ADD_EXPENSE) { ExpenseEditorScreen(navController) }
+        // The editor rises like a sheet: spring slide-up over a fade.
+        composable(
+            Routes.ADD_EXPENSE,
+            enterTransition = {
+                slideInVertically(spring(stiffness = 400f)) { it / 3 } + fadeIn(tween(220))
+            },
+            popExitTransition = {
+                slideOutVertically(tween(180)) { it / 3 } + fadeOut(tween(180))
+            },
+        ) { ExpenseEditorScreen(navController) }
         composable(
             Routes.EDIT_EXPENSE,
             arguments = listOf(navArgument("expenseId") { type = NavType.StringType }),
+            enterTransition = {
+                slideInVertically(spring(stiffness = 400f)) { it / 3 } + fadeIn(tween(220))
+            },
+            popExitTransition = {
+                slideOutVertically(tween(180)) { it / 3 } + fadeOut(tween(180))
+            },
         ) { ExpenseEditorScreen(navController) }
         composable(
             Routes.EXPENSE_DETAIL,

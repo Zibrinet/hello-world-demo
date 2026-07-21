@@ -1,9 +1,12 @@
 package com.zibrinet.split.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
@@ -21,12 +24,14 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Big tactile numeric keypad: the fast path for amount entry. The decimal key
- * disappears for zero-decimal currencies (JPY etc.).
+ * disappears for zero-decimal currencies (JPY etc.); long-pressing backspace
+ * clears the whole amount.
  */
 @Composable
 fun AmountKeypad(
     onDigit: (Char) -> Unit,
     onBackspace: () -> Unit,
+    onClear: () -> Unit,
     decimalEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -80,28 +85,40 @@ fun AmountKeypad(
                     haptics.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onBackspace()
                 },
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClear()
+                },
             ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.Backspace,
-                    contentDescription = "Delete last digit",
+                    contentDescription = "Delete last digit (hold to clear)",
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun KeypadKey(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Surface(
-        onClick = onClick,
         modifier = modifier.height(56.dp),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Box(contentAlignment = Alignment.Center) { content() }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
     }
 }
