@@ -179,6 +179,43 @@ class ReceiptParserTest {
     }
 
     @Test
+    fun `receipt id never beats the total`() {
+        val text = """
+            Mega Mart
+            No 8641259
+            Total 320.00
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text, "THB")
+        assertEquals(32000L, parsed.amountMinor)
+    }
+
+    @Test
+    fun `times are not amounts`() {
+        val text = """
+            Corner Cafe
+            12/06/2026 09:45
+            Total 60.00
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text, "THB")
+        assertEquals(6000L, parsed.amountMinor)
+        assertEquals(dateMillis(2026, 6, 12), parsed.dateMillis)
+    }
+
+    @Test
+    fun `decimal-bearing number beats bigger bare integer without keywords`() {
+        val text = """
+            Some Shop
+            Order 55512
+            Coffee 85.00
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text, "THB")
+        assertEquals(8500L, parsed.amountMinor)
+    }
+
+    @Test
     fun `zero decimal currency keeps integer amounts`() {
         val text = """
             Tokyo Ramen

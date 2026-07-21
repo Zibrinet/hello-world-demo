@@ -83,8 +83,18 @@ object ReceiptParser {
         return if (lower.contains("$")) "USD" else null
     }
 
+    private val decimalTail = Regex("""[.,]\d{1,2}$""")
+
+    /**
+     * Scores every plausible number and keeps the best. Evidence that a token
+     * is the total: a total keyword on its line (strongest) or shortly above,
+     * a currency hint on the line, printed decimals, being the rightmost
+     * number (amount column). Evidence against: bare long integers (receipt /
+     * member ids). Cash-tendered lines and date/time fragments are excluded
+     * outright. Ties go to the larger amount.
+     */
     private fun detectTotal(lines: List<String>, currency: String): Long? {
-        data class Candidate(val minor: Long, val keywordScore: Int)
+        data class Candidate(val minor: Long, val score: Int)
 
         val candidates = mutableListOf<Candidate>()
         lines.forEachIndexed { index, line ->
@@ -95,48 +105,59 @@ object ReceiptParser {
                 return@forEachIndexed
             }
             val keywordHere = totalKeywords.any { lower.contains(it) }
-            // OCR often splits a label and its number across adjacent lines.
-            val keywordAbove = index > 0 &&
-                totalKeywords.any { lines[index - 1].lowercase(Locale.ROOT).contains(it) } &&
-                antiKeywords.none { lines[index - 1].lowercase(Locale.ROOT).contains(it) }
-
-            val score = when {
-                keywordHere -> 2
-                keywordAbove -> 1
-                else -> 0
+            // OCR still sometimes splits a label from its number vertically.
+            val keywordNear = !keywordHere && (1..2).any { distance ->
+                val prev = lines.getOrNull(index - distance)?.lowercase(Locale.ROOT)
+                prev != null &&
+                    totalKeywords.any { prev.contains(it) } &&
+                    antiKeywords.none { prev.contains(it) }
             }
-            for (match in numberRegex.findAll(line)) {
+            val currencyHere = currencyHints.any { (hint, _) -> lower.contains(hint) }
+
+            val matches = numberRegex.findAll(line)
+                .filter { !looksLikeNonAmount(it.value, it.range.first, line) }
+                .toList()
+            val lastStart = matches.lastOrNull()?.range?.first
+
+            for (match in matches) {
                 val minor = parseAmountToken(match.value, currency) ?: continue
                 if (minor <= 0L) continue
-                if (looksLikeNonAmount(match.value, line)) continue
+                val hasDecimals = decimalTail.containsMatchIn(match.value)
+                val digits = match.value.count { it.isDigit() }
+                var score = 0
+                if (keywordHere) score += 4
+                if (keywordNear) score += 2
+                if (currencyHere) score += 2
+                if (hasDecimals) score += 2
+                if (!hasDecimals && digits >= 5 && match.value.none { it == '.' || it == ',' }) {
+                    score -= 3 // receipt/member/order id shaped
+                }
+                if (match.range.first == lastStart) score += 1
                 candidates += Candidate(minor, score)
             }
         }
-        if (candidates.isEmpty()) return null
-
-        // Strongest keyword evidence wins first (a number ON a total line
-        // beats a bigger number merely near one — cash tendered is the classic
-        // trap); size only breaks ties. No keywords at all? Fall back to the
-        // largest plausible number in the document.
-        return candidates
-            .sortedWith(
-                compareByDescending<Candidate> { it.keywordScore }
-                    .thenByDescending { it.minor }
-            )
-            .first().minor
+        return candidates.maxWithOrNull(compareBy({ it.score }, { it.minor }))?.minor
     }
 
-    /** Rejects tokens that are clearly ids, phone numbers, or dates. */
-    private fun looksLikeNonAmount(token: String, line: String): Boolean {
+    /** Rejects tokens that are clearly ids, phone numbers, dates, or times. */
+    private fun looksLikeNonAmount(token: String, start: Int, line: String): Boolean {
         val digitsOnly = token.filter { it.isDigit() }
         if (digitsOnly.length > 9) return true // phone / receipt ids
         val lower = line.lowercase(Locale.ROOT)
         if (lower.contains("tel") || lower.contains("phone") || lower.contains("tax id")) return true
-        // Bare integer that is actually part of a date like 21/07/2026.
-        val idx = line.indexOf(token)
-        val before = line.getOrNull(idx - 1)
-        val after = line.getOrNull(idx + token.length)
-        if (before == '/' || after == '/' || before == '-' && after == '-') return true
+
+        val before = line.getOrNull(start - 1)
+        val beforePrev = line.getOrNull(start - 2)
+        val after = line.getOrNull(start + token.length)
+        val afterNext = line.getOrNull(start + token.length + 1)
+
+        // Fragment of a slashed/dashed/dotted date or a time.
+        if (before == '/' || after == '/') return true
+        if (before == ':' || after == ':') return true
+        if (after == '-' && afterNext?.isDigit() == true) return true
+        if (before == '-' && beforePrev?.isDigit() == true) return true
+        if (after == '.' && afterNext?.isDigit() == true && token.contains('.')) return true
+        if (before == '.' && beforePrev?.isDigit() == true) return true
         return false
     }
 

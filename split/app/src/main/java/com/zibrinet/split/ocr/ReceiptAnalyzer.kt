@@ -37,7 +37,18 @@ class ReceiptAnalyzer(private val appContext: Context) {
                 val image = InputImage.fromFilePath(appContext, Uri.fromFile(File(imagePath)))
                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 try {
-                    recognizer.process(image).await().text.takeIf { it.isNotBlank() }
+                    val visionText = recognizer.process(image).await()
+                    // Rebuild visual rows so a "TOTAL" label rejoins the number
+                    // that sat beside it on the receipt (block order splits them).
+                    val ocrLines = visionText.textBlocks
+                        .flatMap { it.lines }
+                        .mapNotNull { line ->
+                            line.boundingBox?.let { box ->
+                                OcrLine(line.text, box.left, box.centerY(), box.height())
+                            }
+                        }
+                    reconstructRows(ocrLines).ifBlank { visionText.text }
+                        .takeIf { it.isNotBlank() }
                 } finally {
                     recognizer.close()
                 }
