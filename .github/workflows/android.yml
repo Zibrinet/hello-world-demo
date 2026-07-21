@@ -6,6 +6,9 @@ on:
     paths: ["split/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,6 +36,21 @@ jobs:
         with:
           name: split-debug-apk
           path: split/app/build/outputs/apk/debug/app-debug.apk
+
+      # Publish the APK to a rolling release so it can be installed straight
+      # from a phone browser (artifacts require login + unzip; releases don't).
+      - name: Publish APK to rolling release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/split-debug.apk
+          gh release delete split-latest --yes --cleanup-tag || true
+          gh release create split-latest /tmp/split-debug.apk \
+            --title "Split (latest debug build)" \
+            --notes "Debug APK from commit ${GITHUB_SHA::8}. Download split-debug.apk below and open it to install." \
+            --prerelease \
+            --target "$GITHUB_SHA"
 
       - name: Upload reports on failure
         if: failure()
