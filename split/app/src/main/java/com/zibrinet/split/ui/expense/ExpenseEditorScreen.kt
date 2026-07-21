@@ -7,7 +7,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,13 +17,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CalendarToday
@@ -34,9 +38,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -47,6 +53,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -56,6 +63,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,7 +97,8 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 /**
  * One low-friction editor for new, edited, and OCR-prefilled expenses.
- * A 50/50 expense paid by self is: open -> type amount -> Save (3 taps + digits).
+ * Capture (scan / photos) comes first; the keypad stays tucked away until
+ * the amount is tapped, so a scanned expense never shows it at all.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +111,7 @@ fun ExpenseEditorScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showDatePicker by remember { mutableStateOf(false) }
+    var keypadVisible by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.saved) {
         if (state.saved) {
@@ -117,17 +127,17 @@ fun ExpenseEditorScreen(
         }
     }
 
-    val pickImage = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri -> uri?.let(viewModel::attachImage) }
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
+    ) { uris -> viewModel.attachImages(uris) }
 
     val scannerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-                ?.pages?.firstOrNull()?.imageUri
-                ?.let(viewModel::attachImage)
+            val pages = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+                ?.pages?.mapNotNull { it.imageUri }.orEmpty()
+            viewModel.attachImages(pages)
         }
     }
 
@@ -135,7 +145,7 @@ fun ExpenseEditorScreen(
         val activity = context.findActivity() ?: return
         val options = GmsDocumentScannerOptions.Builder()
             .setGalleryImportAllowed(true)
-            .setPageLimit(1)
+            .setPageLimit(5)
             .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
             .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
             .build()
@@ -146,7 +156,9 @@ fun ExpenseEditorScreen(
             }
             .addOnFailureListener {
                 // No Play services / scanner module: the photo picker still works.
-                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                pickImages.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
             }
     }
 
@@ -200,79 +212,111 @@ fun ExpenseEditorScreen(
                 }
             }
 
-            if (state.scanning) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
-            }
-
-            // Amount, front and center.
+            // Capture first: scan or pick photos, thumbnails once attached.
             Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 8.dp),
             ) {
-                Text(
-                    state.amountText.ifEmpty { "0" },
-                    style = MaterialTheme.typography.displayMedium,
-                    color = if (state.amountText.isEmpty()) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
+                OutlinedButton(
+                    onClick = { launchDocumentScanner() },
+                    enabled = !state.scanning,
                     modifier = Modifier.weight(1f),
-                )
-                CurrencyChip(
-                    currency = state.currency,
-                    onCurrencySelected = viewModel::setCurrency,
-                )
-            }
-            AmountKeypad(
-                onDigit = viewModel::appendDigit,
-                onBackspace = viewModel::backspace,
-                onClear = viewModel::clearAmount,
-                decimalEnabled = Money.fractionDigits(state.currency) > 0,
-            )
-
-            if (state.receiptImagePath == null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { launchDocumentScanner() },
-                        enabled = !state.scanning,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Outlined.DocumentScanner, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Scan receipt")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
+                ) {
+                    Icon(Icons.Outlined.DocumentScanner, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scan receipt")
+                }
+                OutlinedButton(
+                    onClick = {
+                        pickImages.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly
                             )
-                        },
-                        enabled = !state.scanning,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Add photo")
+                        )
+                    },
+                    enabled = !state.scanning,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add photos")
+                }
+            }
+
+            if (state.scanning) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+
+            if (state.receiptImagePaths.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.receiptImagePaths, key = { it }) { path ->
+                        Box {
+                            AsyncImage(
+                                model = File(path),
+                                contentDescription = "Attached receipt",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(width = 96.dp, height = 120.dp)
+                                    .clip(RoundedCornerShape(16.dp)),
+                            )
+                            FilledTonalIconButton(
+                                onClick = { viewModel.removeReceiptImage(path) },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .size(28.dp),
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Remove this photo",
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
                     }
                 }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = File(state.receiptImagePath!!),
-                        contentDescription = "Attached receipt",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(120.dp)
-                            .clip(RoundedCornerShape(16.dp)),
+            }
+
+            // Amount: tap to reveal the keypad (backup for manual entry).
+            Surface(
+                onClick = { keypadVisible = !keypadVisible },
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.amountText.isEmpty()) {
+                        Text(
+                            "Tap to enter amount",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Text(
+                            state.amountText,
+                            style = MaterialTheme.typography.displaySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    CurrencyChip(
+                        currency = state.currency,
+                        onCurrencySelected = viewModel::setCurrency,
                     )
-                    IconButton(onClick = viewModel::removeReceipt) {
-                        Icon(Icons.Filled.Close, contentDescription = "Remove receipt")
-                    }
                 }
+            }
+            AnimatedVisibility(visible = keypadVisible) {
+                AmountKeypad(
+                    onDigit = viewModel::appendDigit,
+                    onBackspace = viewModel::backspace,
+                    onClear = viewModel::clearAmount,
+                    decimalEnabled = Money.fractionDigits(state.currency) > 0,
+                )
             }
 
             OutlinedTextField(
@@ -328,19 +372,13 @@ fun ExpenseEditorScreen(
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AssistChip(
-                    onClick = { showDatePicker = true },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Outlined.CalendarToday,
-                            contentDescription = null,
-                        )
-                    },
-                    label = { Text(formatDate(state.date)) },
-                )
-                Spacer(Modifier.width(8.dp))
-            }
+            AssistChip(
+                onClick = { showDatePicker = true },
+                leadingIcon = {
+                    Icon(Icons.Outlined.CalendarToday, contentDescription = null)
+                },
+                label = { Text(formatDate(state.date)) },
+            )
 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Categories, key = { it.id }) { category ->

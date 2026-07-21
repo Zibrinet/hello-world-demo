@@ -1,5 +1,6 @@
 package com.zibrinet.split.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -25,7 +26,12 @@ data class Expense(
     val selfExactMinor: Long? = null,
     val otherExactMinor: Long? = null,
     val category: String? = null,
-    val receiptImagePath: String? = null,
+    /**
+     * Newline-joined receipt image paths. The v1 column name is kept so no
+     * SQL migration is needed; use [receiptPathList]/[joinReceiptPaths].
+     */
+    @ColumnInfo(name = "receiptImagePath")
+    val receiptImagePaths: String? = null,
     val rawOcrText: String? = null,
     val notes: String? = null,
     val createdAt: Long,
@@ -34,3 +40,9 @@ data class Expense(
     val deletedAt: Long? = null,
     val syncStatus: SyncStatus = SyncStatus.LOCAL,
 )
+
+fun Expense.receiptPathList(): List<String> =
+    receiptImagePaths?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+
+fun joinReceiptPaths(paths: List<String>): String? =
+    paths.filter { it.isNotBlank() }.joinToString("\n").ifBlank { null }

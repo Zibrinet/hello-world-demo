@@ -154,6 +154,31 @@ class ReceiptParserTest {
     }
 
     @Test
+    fun `thai buddhist era year converts to gregorian`() {
+        val text = """
+            Lotus Express
+            21/07/2569 15:04
+            รวม 180.00
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text, "THB")
+        assertEquals(dateMillis(2026, 7, 21), parsed.dateMillis)
+        assertEquals(18000L, parsed.amountMinor)
+    }
+
+    @Test
+    fun `us month first date parses when day first is invalid`() {
+        val text = """
+            Online Store
+            07/21/2026
+            Total 99.99
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text, "THB")
+        assertEquals(dateMillis(2026, 7, 21), parsed.dateMillis)
+    }
+
+    @Test
     fun `zero decimal currency keeps integer amounts`() {
         val text = """
             Tokyo Ramen

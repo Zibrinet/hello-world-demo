@@ -14,8 +14,10 @@ offline: no accounts, no network permission, nothing leaves the device.
 - **Receipt / invoice / email-screenshot scanning** — ML Kit Text Recognition
   v2 on-device, plus the ML Kit Document Scanner for camera capture (with
   automatic edge detection; falls back to the photo picker on devices without
-  Google Play services). Parsed values only ever *pre-fill* an editable review
-  sheet — nothing is auto-saved.
+  Google Play services). Multiple photos can be attached at once (multi-page
+  scans too); parsed fields merge earliest-image-first. Dates handle Thai
+  Buddhist Era years (2569 → 2026) and US month-first ordering. Parsed values
+  only ever *pre-fill* an editable review sheet — nothing is auto-saved.
 - **Per-currency balances** — one clear "who owes whom" line per currency.
   No invented exchange rates, ever.
 - **Settle up** — records a payment (full or partial) against the balance.

@@ -41,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import coil3.compose.AsyncImage
 import com.zibrinet.split.data.model.SplitType
+import com.zibrinet.split.data.model.receiptPathList
 import com.zibrinet.split.domain.Money
 import com.zibrinet.split.domain.categoryById
 import com.zibrinet.split.domain.shares
@@ -162,19 +163,24 @@ fun ExpenseDetailScreen(
                 }
             }
 
-            expense.receiptImagePath?.let { path ->
+            val receiptPaths = expense.receiptPathList()
+            if (receiptPaths.isNotEmpty()) {
                 Column {
                     Text(
-                        "Receipt",
+                        if (receiptPaths.size == 1) "Receipt" else "Receipts",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
-                    AsyncImage(
-                        model = File(path),
-                        contentDescription = "Receipt image",
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    receiptPaths.forEach { path ->
+                        AsyncImage(
+                            model = File(path),
+                            contentDescription = "Receipt image",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                        )
+                    }
                 }
             }
 

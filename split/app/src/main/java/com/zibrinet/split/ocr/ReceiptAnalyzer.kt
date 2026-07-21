@@ -17,6 +17,12 @@ data class AnalyzedReceipt(
     val parsed: ParsedReceipt,
 )
 
+data class AnalyzedBatch(
+    val imagePaths: List<String>,
+    val rawText: String?,
+    val parsed: ParsedReceipt,
+)
+
 /**
  * Capture-side pipeline: copy the picked/scanned image into app-private
  * storage, run on-device ML Kit text recognition, then apply the parsing
@@ -44,6 +50,29 @@ class ReceiptAnalyzer(private val appContext: Context) {
                 parsed = rawText?.let { ReceiptParser.parse(it, homeCurrency) } ?: ParsedReceipt(),
             )
         }
+
+    /**
+     * Multi-image capture (several photos picked, or a multi-page scan).
+     * Every image is stored and OCR'd; parsed fields merge earliest-first,
+     * so page one of a scan wins over later pages.
+     */
+    suspend fun analyzeAll(sources: List<Uri>, homeCurrency: String): AnalyzedBatch {
+        val results = sources.map { analyze(it, homeCurrency) }
+        val parsed = results.map { it.parsed }.fold(ParsedReceipt()) { acc, p ->
+            ParsedReceipt(
+                amountMinor = acc.amountMinor ?: p.amountMinor,
+                currency = acc.currency ?: p.currency,
+                dateMillis = acc.dateMillis ?: p.dateMillis,
+                merchant = acc.merchant ?: p.merchant,
+            )
+        }
+        return AnalyzedBatch(
+            imagePaths = results.map { it.imagePath },
+            rawText = results.mapNotNull { it.rawText }
+                .joinToString("\n----\n").ifBlank { null },
+            parsed = parsed,
+        )
+    }
 
     private fun copyToPrivateStorage(source: Uri): String {
         val dir = File(appContext.filesDir, "receipts").apply { mkdirs() }

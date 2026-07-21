@@ -7,14 +7,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,12 +22,10 @@ import com.zibrinet.split.domain.Money
 import com.zibrinet.split.domain.percentShares
 
 /**
- * Split editor. Percent mode keeps the two sides pinned to 100 (moving one
- * side moves the other) and always shows the live amount each person owes,
- * so the split is never abstract. Exact mode auto-fills the other share so
- * the two always sum to the total.
+ * Split editor, slider-first: 50/50 by default, both sides pinned to 100,
+ * live amount for each person so the split is never abstract. Exact-amount
+ * entry is a secondary mode behind a small text link.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SplitControl(
     amountMinor: Long,
@@ -47,38 +42,35 @@ fun SplitControl(
     onExactOtherChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = splitType == SplitType.PERCENT,
-                onClick = { onSplitTypeChange(SplitType.PERCENT) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            ) { Text("Percent") }
-            SegmentedButton(
-                selected = splitType == SplitType.EXACT,
-                onClick = { onSplitTypeChange(SplitType.EXACT) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            ) { Text("Exact") }
-        }
-
+    Column(modifier = modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when (splitType) {
-            SplitType.PERCENT -> PercentEditor(
-                amountMinor = amountMinor,
-                currency = currency,
-                selfName = selfName,
-                otherName = otherName,
-                selfPercent = selfPercent,
-                onSelfPercentChange = onSelfPercentChange,
-            )
+            SplitType.PERCENT -> {
+                PercentEditor(
+                    amountMinor = amountMinor,
+                    currency = currency,
+                    selfName = selfName,
+                    otherName = otherName,
+                    selfPercent = selfPercent,
+                    onSelfPercentChange = onSelfPercentChange,
+                )
+                TextButton(onClick = { onSplitTypeChange(SplitType.EXACT) }) {
+                    Text("Enter exact amounts instead")
+                }
+            }
 
-            SplitType.EXACT -> ExactEditor(
-                selfName = selfName,
-                otherName = otherName,
-                exactSelfText = exactSelfText,
-                exactOtherText = exactOtherText,
-                onExactSelfChange = onExactSelfChange,
-                onExactOtherChange = onExactOtherChange,
-            )
+            SplitType.EXACT -> {
+                ExactEditor(
+                    selfName = selfName,
+                    otherName = otherName,
+                    exactSelfText = exactSelfText,
+                    exactOtherText = exactOtherText,
+                    onExactSelfChange = onExactSelfChange,
+                    onExactOtherChange = onExactOtherChange,
+                )
+                TextButton(onClick = { onSplitTypeChange(SplitType.PERCENT) }) {
+                    Text("Back to percent split")
+                }
+            }
         }
     }
 }

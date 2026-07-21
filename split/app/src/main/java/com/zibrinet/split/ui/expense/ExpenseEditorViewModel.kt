@@ -11,6 +11,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.zibrinet.split.data.SplitRepository
 import com.zibrinet.split.data.model.Expense
 import com.zibrinet.split.data.model.SplitType
+import com.zibrinet.split.data.model.joinReceiptPaths
+import com.zibrinet.split.data.model.receiptPathList
 import com.zibrinet.split.data.settings.SettingsRepository
 import com.zibrinet.split.domain.Money
 import com.zibrinet.split.ocr.ReceiptAnalyzer
@@ -36,7 +38,7 @@ data class EditorState(
     val date: Long = System.currentTimeMillis(),
     val categoryId: String? = null,
     val notes: String = "",
-    val receiptImagePath: String? = null,
+    val receiptImagePaths: List<String> = emptyList(),
     val rawOcrText: String? = null,
     /** True when fields were pre-filled by OCR and need human review. */
     val reviewMode: Boolean = false,
@@ -112,7 +114,7 @@ class ExpenseEditorViewModel(
                         date = loaded.date,
                         categoryId = loaded.category,
                         notes = loaded.notes.orEmpty(),
-                        receiptImagePath = loaded.receiptImagePath,
+                        receiptImagePaths = loaded.receiptPathList(),
                         rawOcrText = loaded.rawOcrText,
                         selfName = selfName,
                         otherName = otherName,
@@ -199,48 +201,60 @@ class ExpenseEditorViewModel(
     fun setDate(value: Long) = _state.update { it.copy(date = value) }
 
     /**
-     * Receipt/invoice/email-screenshot capture path. Extracted values only
-     * pre-fill the form ([EditorState.reviewMode]) — the human always confirms
-     * before anything is saved. If nothing useful was parsed, the photo still
-     * attaches and the form stays as it was: never a hard failure.
+     * Receipt/invoice/email-screenshot capture path; accepts several images
+     * at once (multi-pick or multi-page scan). Extracted values only pre-fill
+     * the form ([EditorState.reviewMode]) — the human always confirms before
+     * anything is saved, and later batches never clobber what's already on
+     * screen. If nothing useful was parsed, the photos still attach: never a
+     * hard failure.
      */
-    fun attachImage(uri: Uri) {
+    fun attachImages(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         _state.update { it.copy(scanning = true, scanMessage = null) }
         viewModelScope.launch {
             val result = try {
-                receiptAnalyzer.analyze(uri, _state.value.currency)
+                receiptAnalyzer.analyzeAll(uris, _state.value.currency)
             } catch (_: Exception) {
                 _state.update {
-                    it.copy(scanning = false, scanMessage = "Couldn't read that image — try another one.")
+                    it.copy(scanning = false, scanMessage = "Couldn't read those images — try again.")
                 }
                 return@launch
             }
             _state.update { s ->
                 val parsed = result.parsed
-                val currency = parsed.currency ?: s.currency
+                val amountEmpty = s.amountText.isBlank()
+                val currency = if (amountEmpty) parsed.currency ?: s.currency else s.currency
                 s.copy(
                     scanning = false,
-                    receiptImagePath = result.imagePath,
-                    rawOcrText = result.rawText,
-                    reviewMode = parsed.foundAnything,
+                    receiptImagePaths = s.receiptImagePaths + result.imagePaths,
+                    rawOcrText = listOfNotNull(s.rawOcrText, result.rawText)
+                        .joinToString("\n----\n").ifBlank { null },
+                    reviewMode = s.reviewMode || parsed.foundAnything,
                     scanMessage = if (parsed.foundAnything) {
                         null
                     } else {
-                        "No details recognized — photo attached, fill in the rest manually."
+                        "No details recognized — photos attached, fill in the rest manually."
                     },
-                    amountText = parsed.amountMinor
-                        ?.let { Money.toPlainString(it, currency) }
-                        ?: s.amountText,
+                    amountText = if (amountEmpty) {
+                        parsed.amountMinor?.let { Money.toPlainString(it, currency) } ?: s.amountText
+                    } else {
+                        s.amountText
+                    },
                     currency = currency,
                     title = s.title.ifBlank { parsed.merchant.orEmpty() },
-                    date = parsed.dateMillis ?: s.date,
+                    date = if (s.receiptImagePaths.isEmpty()) parsed.dateMillis ?: s.date else s.date,
                 ).syncExactWithAmount()
             }
         }
     }
 
-    fun removeReceipt() = _state.update {
-        it.copy(receiptImagePath = null, rawOcrText = null, reviewMode = false, scanMessage = null)
+    fun removeReceiptImage(path: String) = _state.update { s ->
+        val remaining = s.receiptImagePaths - path
+        s.copy(
+            receiptImagePaths = remaining,
+            rawOcrText = if (remaining.isEmpty()) null else s.rawOcrText,
+            reviewMode = if (remaining.isEmpty()) false else s.reviewMode,
+        )
     }
 
     fun clearScanMessage() = _state.update { it.copy(scanMessage = null) }
@@ -286,7 +300,7 @@ class ExpenseEditorViewModel(
             selfExactMinor = selfExact,
             otherExactMinor = otherExact,
             category = s.categoryId,
-            receiptImagePath = s.receiptImagePath,
+            receiptImagePaths = joinReceiptPaths(s.receiptImagePaths),
             rawOcrText = s.rawOcrText,
             notes = s.notes.trim().ifBlank { null },
             createdAt = existing?.createdAt ?: now,

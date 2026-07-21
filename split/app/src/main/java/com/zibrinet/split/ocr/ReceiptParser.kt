@@ -188,6 +188,10 @@ object ReceiptParser {
         DateTimeFormatter.ofPattern("d.M.uuuu"),
         DateTimeFormatter.ofPattern("uuuu-M-d"),
         DateTimeFormatter.ofPattern("d/M/uu"),
+        // US ordering as a fallback: only parses when day-first failed
+        // (e.g. 07/21/2026 has no valid month 21).
+        DateTimeFormatter.ofPattern("M/d/uuuu"),
+        DateTimeFormatter.ofPattern("M-d-uuuu"),
         DateTimeFormatterBuilder().parseCaseInsensitive()
             .appendPattern("d MMM uuuu").toFormatter(Locale.ENGLISH),
         DateTimeFormatterBuilder().parseCaseInsensitive()
@@ -208,12 +212,16 @@ object ReceiptParser {
         for (line in lines) {
             for (match in dateTokenRegex.findAll(line)) {
                 for (formatter in datePatterns) {
-                    val parsed = try {
+                    var parsed = try {
                         LocalDate.parse(match.value, formatter)
                     } catch (_: Exception) {
                         null
+                    } ?: continue
+                    // Thai receipts print Buddhist Era years (2569 = 2026).
+                    if (parsed.year in 2400..2700) {
+                        parsed = parsed.minusYears(543)
                     }
-                    if (parsed != null && parsed.year in 2000..2100) {
+                    if (parsed.year in 2000..2100) {
                         return parsed.atStartOfDay(ZoneId.systemDefault())
                             .toInstant().toEpochMilli()
                     }
