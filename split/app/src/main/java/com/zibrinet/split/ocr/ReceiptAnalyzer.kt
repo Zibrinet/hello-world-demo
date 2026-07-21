@@ -17,10 +17,22 @@ data class AnalyzedReceipt(
     val parsed: ParsedReceipt,
 )
 
+enum class CaptureMode {
+    /** Pages of one document (document scanner): parse as a single receipt. */
+    SCAN_PAGES,
+
+    /** Independent photos (gallery multi-pick): one receipt each, totals sum. */
+    SEPARATE_PHOTOS,
+}
+
 data class AnalyzedBatch(
     val imagePaths: List<String>,
     val rawText: String?,
     val parsed: ParsedReceipt,
+    /** Per-image parse results, index-aligned with [imagePaths]. */
+    val perImage: List<ParsedReceipt>,
+    val amountsFound: Int,
+    val mixedCurrencies: Boolean,
 )
 
 /**
@@ -62,27 +74,48 @@ class ReceiptAnalyzer(private val appContext: Context) {
             )
         }
 
-    /**
-     * Multi-image capture (several photos picked, or a multi-page scan).
-     * Every image is stored and OCR'd; parsed fields merge earliest-first,
-     * so page one of a scan wins over later pages.
-     */
-    suspend fun analyzeAll(sources: List<Uri>, homeCurrency: String): AnalyzedBatch {
+    /** Multi-image capture; combining semantics depend on [mode]. */
+    suspend fun analyzeAll(
+        sources: List<Uri>,
+        homeCurrency: String,
+        mode: CaptureMode,
+    ): AnalyzedBatch {
         val results = sources.map { analyze(it, homeCurrency) }
-        val parsed = results.map { it.parsed }.fold(ParsedReceipt()) { acc, p ->
-            ParsedReceipt(
-                amountMinor = acc.amountMinor ?: p.amountMinor,
-                currency = acc.currency ?: p.currency,
-                dateMillis = acc.dateMillis ?: p.dateMillis,
-                merchant = acc.merchant ?: p.merchant,
-            )
+        val rawText = results.mapNotNull { it.rawText }
+            .joinToString("\n----\n").ifBlank { null }
+
+        return when (mode) {
+            CaptureMode.SCAN_PAGES -> {
+                // One receipt spread over pages: parse the joined text so the
+                // grand total wins wherever it appears, never a per-page sum.
+                val joined = results.mapNotNull { it.rawText }.joinToString("\n")
+                val parsed = if (joined.isBlank()) {
+                    ParsedReceipt()
+                } else {
+                    ReceiptParser.parse(joined, homeCurrency)
+                }
+                AnalyzedBatch(
+                    imagePaths = results.map { it.imagePath },
+                    rawText = rawText,
+                    parsed = parsed,
+                    perImage = results.map { ParsedReceipt() },
+                    amountsFound = if (parsed.amountMinor != null) sources.size else 0,
+                    mixedCurrencies = false,
+                )
+            }
+
+            CaptureMode.SEPARATE_PHOTOS -> {
+                val merged = BatchMerge.mergeSeparatePhotos(results.map { it.parsed })
+                AnalyzedBatch(
+                    imagePaths = results.map { it.imagePath },
+                    rawText = rawText,
+                    parsed = merged.parsed,
+                    perImage = results.map { it.parsed },
+                    amountsFound = merged.amountsFound,
+                    mixedCurrencies = merged.mixedCurrencies,
+                )
+            }
         }
-        return AnalyzedBatch(
-            imagePaths = results.map { it.imagePath },
-            rawText = results.mapNotNull { it.rawText }
-                .joinToString("\n----\n").ifBlank { null },
-            parsed = parsed,
-        )
     }
 
     private fun copyToPrivateStorage(source: Uri): String {

@@ -15,6 +15,7 @@ import com.zibrinet.split.data.model.joinReceiptPaths
 import com.zibrinet.split.data.model.receiptPathList
 import com.zibrinet.split.data.settings.SettingsRepository
 import com.zibrinet.split.domain.Money
+import com.zibrinet.split.ocr.CaptureMode
 import com.zibrinet.split.ocr.ReceiptAnalyzer
 import com.zibrinet.split.ui.common.appContainer
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** An attached receipt image plus what OCR read off it (editor-session only). */
+data class ReceiptAttachment(
+    val path: String,
+    val amountMinor: Long? = null,
+    val currency: String? = null,
+)
 
 data class EditorState(
     val loading: Boolean = true,
@@ -38,7 +46,7 @@ data class EditorState(
     val date: Long = System.currentTimeMillis(),
     val categoryId: String? = null,
     val notes: String = "",
-    val receiptImagePaths: List<String> = emptyList(),
+    val attachments: List<ReceiptAttachment> = emptyList(),
     val rawOcrText: String? = null,
     /** True when fields were pre-filled by OCR and need human review. */
     val reviewMode: Boolean = false,
@@ -114,7 +122,7 @@ class ExpenseEditorViewModel(
                         date = loaded.date,
                         categoryId = loaded.category,
                         notes = loaded.notes.orEmpty(),
-                        receiptImagePaths = loaded.receiptPathList(),
+                        attachments = loaded.receiptPathList().map { ReceiptAttachment(it) },
                         rawOcrText = loaded.rawOcrText,
                         selfName = selfName,
                         otherName = otherName,
@@ -201,19 +209,29 @@ class ExpenseEditorViewModel(
     fun setDate(value: Long) = _state.update { it.copy(date = value) }
 
     /**
-     * Receipt/invoice/email-screenshot capture path; accepts several images
-     * at once (multi-pick or multi-page scan). Extracted values only pre-fill
-     * the form ([EditorState.reviewMode]) — the human always confirms before
-     * anything is saved, and later batches never clobber what's already on
-     * screen. If nothing useful was parsed, the photos still attach: never a
-     * hard failure.
+     * The last amount text this class wrote into the form from OCR. While the
+     * visible amount still equals it, the amount is "automatic": new photo
+     * batches add on top and removing a photo subtracts its share. The moment
+     * the user edits the amount by hand, automation backs off.
      */
-    fun attachImages(uris: List<Uri>) {
+    private var lastAutoAmountText: String? = null
+
+    /**
+     * Receipt/invoice/email-screenshot capture; accepts several images at
+     * once. Gallery picks are treated as separate receipts whose totals sum;
+     * scanner pages are parsed as one document. Extracted values only
+     * pre-fill the form ([EditorState.reviewMode]) — the human always
+     * confirms before anything is saved, and a manual amount is never
+     * overwritten. If nothing useful was parsed, the photos still attach:
+     * never a hard failure.
+     */
+    fun attachImages(uris: List<Uri>, fromScanner: Boolean) {
         if (uris.isEmpty()) return
         _state.update { it.copy(scanning = true, scanMessage = null) }
         viewModelScope.launch {
+            val mode = if (fromScanner) CaptureMode.SCAN_PAGES else CaptureMode.SEPARATE_PHOTOS
             val result = try {
-                receiptAnalyzer.analyzeAll(uris, _state.value.currency)
+                receiptAnalyzer.analyzeAll(uris, _state.value.currency, mode)
             } catch (_: Exception) {
                 _state.update {
                     it.copy(scanning = false, scanMessage = "Couldn't read those images — try again.")
@@ -222,39 +240,74 @@ class ExpenseEditorViewModel(
             }
             _state.update { s ->
                 val parsed = result.parsed
-                val amountEmpty = s.amountText.isBlank()
-                val currency = if (amountEmpty) parsed.currency ?: s.currency else s.currency
+                val newAttachments = result.imagePaths.mapIndexed { i, path ->
+                    val p = result.perImage.getOrNull(i)
+                    ReceiptAttachment(path, p?.amountMinor, p?.currency)
+                }
+                val amountIsAuto = s.amountText.isBlank() || s.amountText == lastAutoAmountText
+
+                var currency = s.currency
+                var amountText = s.amountText
+                var message: String? = null
+                if (parsed.amountMinor != null && amountIsAuto) {
+                    if (s.amountText.isBlank()) {
+                        currency = parsed.currency ?: s.currency
+                        amountText = Money.toPlainString(parsed.amountMinor, currency)
+                        lastAutoAmountText = amountText
+                    } else if (parsed.currency == null || parsed.currency == s.currency) {
+                        val current = Money.parseToMinor(s.amountText, s.currency) ?: 0L
+                        amountText = Money.toPlainString(current + parsed.amountMinor, s.currency)
+                        lastAutoAmountText = amountText
+                    } else {
+                        message = "New photos use a different currency — amounts were not combined."
+                    }
+                }
+                if (result.mixedCurrencies) {
+                    message = "Photos show different currencies — only the first total was used."
+                } else if (!fromScanner && result.amountsFound in 1 until uris.size) {
+                    message =
+                        "No total found on ${uris.size - result.amountsFound} of ${uris.size} photos — check the amount."
+                } else if (!parsed.foundAnything) {
+                    message = "No details recognized — photos attached, fill in the rest manually."
+                }
+
                 s.copy(
                     scanning = false,
-                    receiptImagePaths = s.receiptImagePaths + result.imagePaths,
+                    attachments = s.attachments + newAttachments,
                     rawOcrText = listOfNotNull(s.rawOcrText, result.rawText)
                         .joinToString("\n----\n").ifBlank { null },
                     reviewMode = s.reviewMode || parsed.foundAnything,
-                    scanMessage = if (parsed.foundAnything) {
-                        null
-                    } else {
-                        "No details recognized — photos attached, fill in the rest manually."
-                    },
-                    amountText = if (amountEmpty) {
-                        parsed.amountMinor?.let { Money.toPlainString(it, currency) } ?: s.amountText
-                    } else {
-                        s.amountText
-                    },
+                    scanMessage = message,
+                    amountText = amountText,
                     currency = currency,
                     title = s.title.ifBlank { parsed.merchant.orEmpty() },
-                    date = if (s.receiptImagePaths.isEmpty()) parsed.dateMillis ?: s.date else s.date,
+                    date = if (s.attachments.isEmpty()) parsed.dateMillis ?: s.date else s.date,
                 ).syncExactWithAmount()
             }
         }
     }
 
     fun removeReceiptImage(path: String) = _state.update { s ->
-        val remaining = s.receiptImagePaths - path
+        val removed = s.attachments.firstOrNull { it.path == path }
+        val remaining = s.attachments.filterNot { it.path == path }
+
+        var amountText = s.amountText
+        val removable = removed?.amountMinor != null &&
+            s.amountText == lastAutoAmountText &&
+            (removed.currency == null || removed.currency == s.currency)
+        if (removable) {
+            val current = Money.parseToMinor(s.amountText, s.currency) ?: 0L
+            val newMinor = (current - removed!!.amountMinor!!).coerceAtLeast(0L)
+            amountText = if (newMinor == 0L) "" else Money.toPlainString(newMinor, s.currency)
+            lastAutoAmountText = amountText.ifBlank { null }
+        }
+
         s.copy(
-            receiptImagePaths = remaining,
+            attachments = remaining,
+            amountText = amountText,
             rawOcrText = if (remaining.isEmpty()) null else s.rawOcrText,
             reviewMode = if (remaining.isEmpty()) false else s.reviewMode,
-        )
+        ).syncExactWithAmount()
     }
 
     fun clearScanMessage() = _state.update { it.copy(scanMessage = null) }
@@ -300,7 +353,7 @@ class ExpenseEditorViewModel(
             selfExactMinor = selfExact,
             otherExactMinor = otherExact,
             category = s.categoryId,
-            receiptImagePaths = joinReceiptPaths(s.receiptImagePaths),
+            receiptImagePaths = joinReceiptPaths(s.attachments.map { it.path }),
             rawOcrText = s.rawOcrText,
             notes = s.notes.trim().ifBlank { null },
             createdAt = existing?.createdAt ?: now,

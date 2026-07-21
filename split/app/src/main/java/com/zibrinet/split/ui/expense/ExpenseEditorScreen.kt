@@ -129,7 +129,7 @@ fun ExpenseEditorScreen(
 
     val pickImages = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
-    ) { uris -> viewModel.attachImages(uris) }
+    ) { uris -> viewModel.attachImages(uris, fromScanner = false) }
 
     val scannerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -137,7 +137,7 @@ fun ExpenseEditorScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val pages = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
                 ?.pages?.mapNotNull { it.imageUri }.orEmpty()
-            viewModel.attachImages(pages)
+            viewModel.attachImages(pages, fromScanner = true)
         }
     }
 
@@ -247,35 +247,58 @@ fun ExpenseEditorScreen(
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
 
-            if (state.receiptImagePaths.isNotEmpty()) {
+            if (state.attachments.isNotEmpty()) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.receiptImagePaths, key = { it }) { path ->
-                        Box {
-                            AsyncImage(
-                                model = File(path),
-                                contentDescription = "Attached receipt",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(width = 96.dp, height = 120.dp)
-                                    .clip(RoundedCornerShape(16.dp)),
-                            )
-                            FilledTonalIconButton(
-                                onClick = { viewModel.removeReceiptImage(path) },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(28.dp),
-                                shape = CircleShape,
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(),
-                            ) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "Remove this photo",
-                                    modifier = Modifier.size(16.dp),
+                    items(state.attachments, key = { it.path }) { attachment ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box {
+                                AsyncImage(
+                                    model = File(attachment.path),
+                                    contentDescription = "Attached receipt",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(width = 96.dp, height = 120.dp)
+                                        .clip(RoundedCornerShape(16.dp)),
                                 )
+                                FilledTonalIconButton(
+                                    onClick = { viewModel.removeReceiptImage(attachment.path) },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(28.dp),
+                                    shape = CircleShape,
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Remove this photo",
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
                             }
+                            Text(
+                                attachment.amountMinor?.let {
+                                    Money.format(it, attachment.currency ?: state.currency)
+                                } ?: "—",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
+                }
+                // Sum breakdown: each photo's detected total and what they add
+                // up to, so one misread photo is obvious at a glance.
+                val detected = state.attachments.mapNotNull { a ->
+                    a.amountMinor?.let { it to (a.currency ?: state.currency) }
+                }
+                if (detected.size >= 2 && detected.all { it.second == detected.first().second }) {
+                    val cur = detected.first().second
+                    Text(
+                        detected.joinToString(" + ") { Money.format(it.first, cur) } +
+                            " = " + Money.format(detected.sumOf { it.first }, cur),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
