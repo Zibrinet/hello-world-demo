@@ -1,5 +1,6 @@
 package com.zibrinet.split.ui.expense
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -12,6 +13,7 @@ import com.zibrinet.split.data.model.Expense
 import com.zibrinet.split.data.model.SplitType
 import com.zibrinet.split.data.settings.SettingsRepository
 import com.zibrinet.split.domain.Money
+import com.zibrinet.split.ocr.ReceiptAnalyzer
 import com.zibrinet.split.ui.common.appContainer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,8 @@ data class EditorState(
     val rawOcrText: String? = null,
     /** True when fields were pre-filled by OCR and need human review. */
     val reviewMode: Boolean = false,
+    val scanning: Boolean = false,
+    val scanMessage: String? = null,
     val selfName: String = "",
     val otherName: String = "",
     val saved: Boolean = false,
@@ -59,6 +63,7 @@ data class EditorState(
 class ExpenseEditorViewModel(
     private val repository: SplitRepository,
     private val settings: SettingsRepository,
+    private val receiptAnalyzer: ReceiptAnalyzer,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -189,6 +194,53 @@ class ExpenseEditorViewModel(
 
     fun setDate(value: Long) = _state.update { it.copy(date = value) }
 
+    /**
+     * Receipt/invoice/email-screenshot capture path. Extracted values only
+     * pre-fill the form ([EditorState.reviewMode]) — the human always confirms
+     * before anything is saved. If nothing useful was parsed, the photo still
+     * attaches and the form stays as it was: never a hard failure.
+     */
+    fun attachImage(uri: Uri) {
+        _state.update { it.copy(scanning = true, scanMessage = null) }
+        viewModelScope.launch {
+            val result = try {
+                receiptAnalyzer.analyze(uri, _state.value.currency)
+            } catch (_: Exception) {
+                _state.update {
+                    it.copy(scanning = false, scanMessage = "Couldn't read that image — try another one.")
+                }
+                return@launch
+            }
+            _state.update { s ->
+                val parsed = result.parsed
+                val currency = parsed.currency ?: s.currency
+                s.copy(
+                    scanning = false,
+                    receiptImagePath = result.imagePath,
+                    rawOcrText = result.rawText,
+                    reviewMode = parsed.foundAnything,
+                    scanMessage = if (parsed.foundAnything) {
+                        null
+                    } else {
+                        "No details recognized — photo attached, fill in the rest manually."
+                    },
+                    amountText = parsed.amountMinor
+                        ?.let { Money.toPlainString(it, currency) }
+                        ?: s.amountText,
+                    currency = currency,
+                    title = s.title.ifBlank { parsed.merchant.orEmpty() },
+                    date = parsed.dateMillis ?: s.date,
+                ).syncExactWithAmount()
+            }
+        }
+    }
+
+    fun removeReceipt() = _state.update {
+        it.copy(receiptImagePath = null, rawOcrText = null, reviewMode = false, scanMessage = null)
+    }
+
+    fun clearScanMessage() = _state.update { it.copy(scanMessage = null) }
+
     fun setCategory(id: String?) = _state.update { it.copy(categoryId = id) }
 
     fun setNotes(value: String) = _state.update { it.copy(notes = value) }
@@ -249,6 +301,7 @@ class ExpenseEditorViewModel(
                 ExpenseEditorViewModel(
                     repository = container.repository,
                     settings = container.settings,
+                    receiptAnalyzer = container.receiptAnalyzer,
                     savedStateHandle = createSavedStateHandle(),
                 )
             }

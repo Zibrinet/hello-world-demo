@@ -5,11 +5,13 @@ import com.zibrinet.split.data.RoomSplitRepository
 import com.zibrinet.split.data.SplitRepository
 import com.zibrinet.split.data.local.SplitDatabase
 import com.zibrinet.split.data.settings.SettingsRepository
+import com.zibrinet.split.ocr.ReceiptAnalyzer
 
 /** Hand-rolled DI: one shared ledger, one database, no framework needed. */
 interface AppContainer {
     val repository: SplitRepository
     val settings: SettingsRepository
+    val receiptAnalyzer: ReceiptAnalyzer
 }
 
 class DefaultAppContainer(private val appContext: Context) : AppContainer {
@@ -18,4 +20,6 @@ class DefaultAppContainer(private val appContext: Context) : AppContainer {
     override val repository: SplitRepository by lazy { RoomSplitRepository(database) }
 
     override val settings: SettingsRepository by lazy { SettingsRepository(appContext) }
+
+    override val receiptAnalyzer: ReceiptAnalyzer by lazy { ReceiptAnalyzer(appContext) }
 }
