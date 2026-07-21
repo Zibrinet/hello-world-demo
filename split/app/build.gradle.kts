@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.zibrinet.split"
-    compileSdk = 36
+    // Lifecycle 2.11 AARs require compiling against API 37.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.zibrinet.split"
