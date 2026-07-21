@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two circles divided by a diagonal stroke: a shared bill, split in two. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M63,38 L45,70"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,46 m-9,0 a9,9 0 1,1 18,0 a9,9 0 1,1 -18,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,62 m-9,0 a9,9 0 1,1 18,0 a9,9 0 1,1 -18,0" />
+</vector>

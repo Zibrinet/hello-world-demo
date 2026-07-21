@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Minimal window theme; all real theming lives in Compose (SplitTheme). -->
+    <style name="Theme.Split" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>
