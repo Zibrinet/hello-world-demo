@@ -45,8 +45,8 @@ object AutoCut {
         return kept.sorted().map { (it * HOP + OnsetDetector.N_FFT / 2.0) / SAMPLE_RATE }
     }
 
-    /** Groups hits into rallies and returns their (start, end) windows in seconds. */
-    fun rallies(hits: List<Double>, durationS: Double): List<Pair<Double, Double>> {
+    /** Groups hits into rallies (start and end include the toss and the last bounce). */
+    fun rallies(hits: List<Double>, durationS: Double): List<Rally> {
         val groups = ArrayList<MutableList<Double>>()
         for (t in hits.sorted()) {
             if (groups.isEmpty() || t - groups.last().last() > RALLY_GAP_S) groups.add(mutableListOf(t))
@@ -54,7 +54,7 @@ object AutoCut {
         }
         // Windows cannot overlap: rallies are more than RALLY_GAP_S apart, which exceeds the padding.
         return groups.filter { it.size >= MIN_HITS }.map {
-            maxOf(0.0, it.first() - BEFORE_FIRST_HIT_S) to minOf(durationS, it.last() + AFTER_LAST_HIT_S)
+            Rally(maxOf(0.0, it.first() - BEFORE_FIRST_HIT_S), minOf(durationS, it.last() + AFTER_LAST_HIT_S), it.size)
         }
     }
 

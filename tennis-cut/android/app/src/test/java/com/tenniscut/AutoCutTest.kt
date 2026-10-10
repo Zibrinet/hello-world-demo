@@ -47,7 +47,7 @@ class AutoCutTest {
 
     @Test fun ralliesGroupHitsAndDropLoneSounds() {
         val hits = listOf(10.0, 11.2, 12.5, 30.0, 50.0, 51.0, 52.1, 53.0)
-        assertEquals(listOf(7.5 to 14.5, 47.5 to 55.0), AutoCut.rallies(hits, 100.0))
+        assertEquals(listOf(Rally(7.5, 14.5, 3), Rally(47.5, 55.0, 4)), AutoCut.rallies(hits, 100.0))
     }
 
     @Test fun fftOfASineHasOnePeak() {

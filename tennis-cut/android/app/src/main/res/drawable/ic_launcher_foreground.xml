@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A tennis ball: yellow-green with the two white seams. Safe zone is the middle 66dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#D7F44A"
+        android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="3" android:fillColor="#00000000"
+        android:pathData="M38,36.5C46,44 46,64 38,71.5" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="3" android:fillColor="#00000000"
+        android:pathData="M70,36.5C62,44 62,64 70,71.5" />
+</vector>

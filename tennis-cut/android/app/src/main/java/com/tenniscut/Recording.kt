@@ -44,11 +44,12 @@ class MatchRecorder(private val context: Context) {
     var error by mutableStateOf<String?>(null)
 
     private var videoCapture: VideoCapture<Recorder>? = null
+    private var preview: Preview? = null
     private var recording: Recording? = null
     private var recordedNs = 0L
     private var recordedNsAt = 0L
 
-    suspend fun bind(owner: LifecycleOwner, previewView: PreviewView) {
+    suspend fun bind(owner: LifecycleOwner, previewView: PreviewView, rotation: Int) {
         val provider = suspendCoroutine { cont ->
             val future = ProcessCameraProvider.getInstance(context)
             future.addListener({ cont.resume(future.get()) }, ContextCompat.getMainExecutor(context))
@@ -62,12 +63,21 @@ class MatchRecorder(private val context: Context) {
         val capture = VideoCapture.Builder(recorder)
             .setTargetFrameRate(Range(target, target))
             .setVideoStabilizationEnabled(false) // stabilisation warps the court geometry
+            .setTargetRotation(rotation)
             .build()
-        val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+        val preview = Preview.Builder().setTargetRotation(rotation).build()
+            .also { it.surfaceProvider = previewView.surfaceProvider }
         provider.unbindAll()
         provider.bindToLifecycle(owner, selector, preview, capture)
+        this.preview = preview
         videoCapture = capture
         fps = target
+    }
+
+    /** Follow the phone's orientation. A recording keeps the orientation it started with. */
+    fun setRotation(rotation: Int) {
+        preview?.targetRotation = rotation
+        if (!isRecording) videoCapture?.targetRotation = rotation
     }
 
     @SuppressLint("MissingPermission") // audio is only enabled after the permission check

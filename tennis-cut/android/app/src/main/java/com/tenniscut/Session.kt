@@ -10,9 +10,6 @@ import java.io.File
  * so the laptop pipeline can read the same folder).
  */
 
-const val PRE_ROLL_S = 20.0
-const val POST_ROLL_S = 1.0
-
 data class Setup(
     val sessionId: String,
     val nameA: String,
@@ -73,15 +70,6 @@ data class Marker(val t: Double, val type: String, val player: Player?, val sour
     }
 }
 
-data class Point(
-    val idx: Int,
-    val start: Double,
-    val end: Double,
-    val winner: Player,
-    val before: Score, // score shown during the point
-    val after: Score,
-)
-
 /** Apply undos in time order; returns the presses that still count. */
 fun resolveMarkers(markers: List<Marker>): List<Marker> {
     val presses = ArrayList<Marker>()
@@ -94,26 +82,6 @@ fun resolveMarkers(markers: List<Marker>): List<Marker> {
     return presses
 }
 
-/** Score after every counted press, starting from 0-0. Presses after match point are ignored. */
-fun scoreAfter(setup: Setup, presses: List<Marker>): Score =
-    presses.fold(Score(gameServer = setup.firstServer)) { s, m ->
-        if (s.winner == null) Tennis.applyPoint(s, setup.format, m.player!!) else s
-    }
-
-/** One point per press: from max(previous point's end, press - PRE_ROLL_S) to press + POST_ROLL_S. */
-fun pointsFrom(setup: Setup, presses: List<Marker>, durationS: Double): List<Point> {
-    var prevEnd = 0.0
-    var score = Score(gameServer = setup.firstServer)
-    return presses.filter { it.t <= durationS }.mapIndexed { idx, m ->
-        val start = maxOf(prevEnd, m.t - PRE_ROLL_S)
-        val end = minOf(m.t + POST_ROLL_S, durationS)
-        val before = score
-        if (score.winner == null) score = Tennis.applyPoint(score, setup.format, m.player!!)
-        prevEnd = end
-        Point(idx, start, end, m.player!!, before, score)
-    }
-}
-
 const val VIDEO_FILE = "match.mp4"
 
 class SessionDir(val dir: File) {
@@ -121,6 +89,29 @@ class SessionDir(val dir: File) {
     private val setupFile get() = File(dir, "setup.json")
     private val markersFile get() = File(dir, "markers.json")
     private val highlightsFile get() = File(dir, "highlights_uri.txt")
+    private val topRalliesFile get() = File(dir, "top_rallies_uri.txt")
+    private val ralliesFile get() = File(dir, "rallies.json")
+    private val verdictsFile get() = File(dir, "scoring.json")
+
+    /** Rallies found in the audio, or null if the recording has not been analysed yet. */
+    fun readRallies(): List<Rally>? =
+        if (ralliesFile.exists()) ralliesFromJson(JSONArray(ralliesFile.readText())) else null
+
+    fun writeRallies(rallies: List<Rally>) = writeAtomically(ralliesFile, ralliesToJson(rallies).toString())
+
+    /** Who won each rally (by rally index): clicker presses first, then anything scored after the match. */
+    fun readVerdicts(rallies: List<Rally>): Map<Int, Verdict> {
+        val scored = if (verdictsFile.exists()) verdictsFromJson(JSONObject(verdictsFile.readText())) else emptyMap()
+        return verdictsFromPresses(rallies, resolveMarkers(readMarkers())) + scored
+    }
+
+    fun writeVerdicts(verdicts: Map<Int, Verdict>) = writeAtomically(verdictsFile, verdictsToJson(verdicts).toString())
+
+    var topRalliesUri: Uri?
+        get() = if (topRalliesFile.exists()) Uri.parse(topRalliesFile.readText()) else null
+        set(value) {
+            if (value == null) topRalliesFile.delete() else topRalliesFile.writeText(value.toString())
+        }
 
     /** Where the finished highlight video was saved in the gallery, if it has been made. */
     var highlightsUri: Uri?

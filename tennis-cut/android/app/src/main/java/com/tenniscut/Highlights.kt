@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -38,9 +39,11 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-private const val HIGHLIGHT_BITRATE = 8_000_000 // about 3.5 GB per hour of highlights at 1080p
+private const val EXPORT_BITRATE = 8_000_000 // about 3.5 GB per hour of output at 1080p
+const val TOP_RALLY_COUNT = 10
 
-data class VideoInfo(val durationS: Double, val height: Int)
+/** `shortSide` is the frame's short side as shown (1080 for 1080p, whichever way up). */
+data class VideoInfo(val durationS: Double, val shortSide: Int)
 
 fun videoInfo(video: File): VideoInfo {
     val r = MediaMetadataRetriever()
@@ -49,52 +52,68 @@ fun videoInfo(video: File): VideoInfo {
         val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)!!.toInt()
         val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)!!.toInt()
         val ms = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
-        return VideoInfo(ms / 1000.0, minOf(w, h)) // recorded in landscape: the short side is the height
+        return VideoInfo(ms / 1000.0, minOf(w, h))
     } finally {
         r.release()
     }
 }
 
-private class Segment(val start: Double, val end: Double, val board: Bitmap?)
+fun thumbnail(video: File, atS: Double): Bitmap? {
+    val r = MediaMetadataRetriever()
+    return try {
+        r.setDataSource(video.absolutePath)
+        r.getScaledFrameAtTime((atS * 1_000_000).toLong(), MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 640)
+    } catch (e: RuntimeException) {
+        null // unreadable or still-recording file: the card just shows no picture
+    } finally {
+        r.release()
+    }
+}
+
+/** Finds the rallies from the sound of the ball and saves them with the match. */
+suspend fun analyseRallies(session: SessionDir, onProgress: (Float) -> Unit): List<Rally> =
+    withContext(Dispatchers.Default) {
+        val duration = videoInfo(session.video).durationS
+        val rallies = AutoCut.rallies(AutoCut.hits(AutoCut.envelope(session.video, onProgress)), duration)
+        session.writeRallies(rallies)
+        rallies
+    }
+
+enum class VideoKind(val title: String) { HIGHLIGHTS("Highlights"), TOP_RALLIES("Top rallies") }
 
 /**
- * Cuts every point out of the match and saves one video to the gallery. If points were marked,
- * each clip carries the score; if not, rallies are found from the sound and there is no score.
+ * Cuts the chosen rallies out of the match into one video, burns in the score where it is known,
+ * and saves it to the Gallery ("Tennis Cut" album).
  */
-suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (String, Int) -> Unit): Uri =
+suspend fun makeVideo(context: Context, session: SessionDir, kind: VideoKind, onProgress: (Int) -> Unit): Uri =
     withContext(Dispatchers.Main) {
         val setup = session.readSetup()
         val info = videoInfo(session.video)
-        val presses = resolveMarkers(session.readMarkers())
-        val segments = if (presses.isNotEmpty()) {
-            pointsFrom(setup, presses, info.durationS).map {
-                Segment(it.start, it.end, scoreboardBitmap(setup, it.before, info.height))
-            }
-        } else {
-            val env = withContext(Dispatchers.Default) {
-                AutoCut.envelope(session.video) { onProgress("Finding the rallies", (it * 100).toInt()) }
-            }
-            AutoCut.rallies(AutoCut.hits(env), info.durationS).map { Segment(it.first, it.second, null) }
+        val rallies = session.readRallies() ?: error("The match has not been analysed yet.")
+        val scored = scoreRallies(setup, rallies, session.readVerdicts(rallies))
+        val chosen = when (kind) {
+            VideoKind.HIGHLIGHTS -> scored
+            VideoKind.TOP_RALLIES -> scored.sortedByDescending { it.rally.shots }.take(TOP_RALLY_COUNT).sortedBy { it.idx }
         }
-        require(segments.isNotEmpty()) { "No points were found in this recording." }
+        require(chosen.isNotEmpty()) { "No rallies were found in this recording." }
 
-        val items = segments.map { seg ->
+        val items = chosen.map { r ->
             val clip = MediaItem.Builder()
                 .setUri(Uri.fromFile(session.video))
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs((seg.start * 1000).toLong())
-                        .setEndPositionMs((seg.end * 1000).toLong())
+                        .setStartPositionMs((r.rally.start * 1000).toLong())
+                        .setEndPositionMs((r.rally.end * 1000).toLong())
                         .build()
                 )
                 .build()
             val item = EditedMediaItem.Builder(clip)
-            if (seg.board != null) {
+            r.before?.let { before ->
                 val overlay = BitmapOverlay.createStaticBitmapOverlay(
-                    seg.board,
+                    scoreboardBitmap(setup, before, info.shortSide),
                     StaticOverlaySettings.Builder()
                         .setOverlayFrameAnchor(-1f, 1f) // the board's top-left corner...
-                        .setBackgroundFrameAnchor(-0.97f, 0.94f) // ...sits near the video's top-left corner
+                        .setBackgroundFrameAnchor(-0.95f, 0.94f) // ...sits near the video's top-left corner
                         .build(),
                 )
                 item.setEffects(Effects(listOf(), listOf(OverlayEffect(ImmutableList.of<TextureOverlay>(overlay)))))
@@ -102,15 +121,13 @@ suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (S
             item.build()
         }
         val composition = Composition.Builder(EditedMediaItemSequence.Builder(items).build()).build()
-        val out = File(session.dir, "highlights.mp4").also { it.delete() }
+        val out = File(session.dir, "export.mp4").also { it.delete() }
         val transformer = Transformer.Builder(context)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(
                 DefaultEncoderFactory.Builder(context)
-                    .setRequestedVideoEncoderSettings(
-                        VideoEncoderSettings.Builder().setBitrate(HIGHLIGHT_BITRATE).build()
-                    )
+                    .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(EXPORT_BITRATE).build())
                     .build()
             )
             .build()
@@ -119,9 +136,7 @@ suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (S
             val progress = launch {
                 val holder = ProgressHolder()
                 while (true) {
-                    if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-                        onProgress("Making the video", holder.progress)
-                    }
+                    if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) onProgress(holder.progress)
                     delay(500)
                 }
             }
@@ -132,11 +147,7 @@ suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (S
                             cont.resume(Unit)
                         }
 
-                        override fun onError(
-                            composition: Composition,
-                            exportResult: ExportResult,
-                            exportException: ExportException,
-                        ) {
+                        override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
                             cont.resumeWithException(exportException)
                         }
                     })
@@ -149,9 +160,12 @@ suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (S
         }
 
         val uri = withContext(Dispatchers.IO) {
-            saveToGallery(context, out, "Tennis ${setup.sessionId}.mp4").also { out.delete() }
+            saveToGallery(context, out, "Tennis ${kind.title} ${setup.sessionId}.mp4").also { out.delete() }
         }
-        session.highlightsUri = uri
+        when (kind) {
+            VideoKind.HIGHLIGHTS -> session.highlightsUri = uri
+            VideoKind.TOP_RALLIES -> session.topRalliesUri = uri
+        }
         uri
     }
 
@@ -170,46 +184,63 @@ private fun saveToGallery(context: Context, file: File, displayName: String): Ur
     return uri
 }
 
-/** Score as it stands before a point, drawn at the size it should appear on a video this tall. */
-fun scoreboardBitmap(setup: Setup, s: Score, videoHeight: Int): Bitmap {
-    val u = videoHeight / 1080f
-    val pad = 14 * u
-    val rowH = 52 * u
-    val dotW = 28 * u
-    val nameW = 250 * u
-    val colW = 50 * u
-    val ptsW = 76 * u
-    val columns = s.sets + if (Tennis.isMatchTiebreak(s, setup.format)) emptyList() else listOf(s.games)
+/** TV-style score bug for the score before a point, sized for a frame whose short side is `shortSide`. */
+fun scoreboardBitmap(setup: Setup, s: Score, shortSide: Int): Bitmap {
+    val u = shortSide / 1080f
+    val pad = 10 * u
+    val rowH = 50 * u
+    val ballW = 30 * u
+    val nameW = 230 * u
+    val colW = 44 * u
+    val ptsW = 74 * u
+    val sets = s.sets
+    val showGames = !Tennis.isMatchTiebreak(s, setup.format)
     val labels = Tennis.pointLabels(s, setup.format)
     val serving = Tennis.server(s, setup.format)
+    val cols = sets.size + if (showGames) 1 else 0
 
-    val width = 2 * pad + dotW + nameW + colW * columns.size + ptsW
-    val height = 2 * pad + 2 * rowH
+    val bodyW = pad + ballW + nameW + colW * cols + pad
+    val width = bodyW + ptsW
+    val height = 2 * rowH
     val bitmap = Bitmap.createBitmap(width.toInt(), height.toInt(), Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    canvas.drawRoundRect(0f, 0f, width, height, 10 * u, 10 * u, Paint().apply { color = Color.argb(180, 0, 0, 0) })
+    val radius = 12 * u
+    canvas.drawRoundRect(RectF(0f, 0f, width, height), radius, radius, fill(Color.argb(235, 11, 31, 58)))
+    canvas.drawRoundRect(RectF(bodyW, 0f, width, height), radius, radius, fill(ACCENT))
+    canvas.drawRect(RectF(bodyW, 0f, bodyW + radius, height), fill(ACCENT))
+    canvas.drawRect(RectF(0f, rowH - u, bodyW, rowH + u), fill(Color.argb(60, 255, 255, 255)))
 
-    val white = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = 38 * u
-        typeface = Typeface.DEFAULT_BOLD
+    val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 34 * u
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
-    val yellow = Paint(white).apply { color = Color.rgb(255, 229, 0) }
     for (player in Player.entries) {
         val row = player.ordinal
-        val centerY = pad + rowH * (row + 0.5f)
-        val baseline = centerY + white.textSize * 0.35f
+        val centerY = rowH * (row + 0.5f)
+        val baseline = centerY + text.textSize * 0.36f
         var x = pad
-        if (player == serving) canvas.drawCircle(x + dotW / 2, centerY, 7 * u, yellow)
-        x += dotW
-        canvas.drawText(setup.name(player).take(14), x, baseline, white.apply { textAlign = Paint.Align.LEFT })
+        if (player == serving) canvas.drawCircle(x + ballW / 2, centerY, 8 * u, fill(ACCENT))
+        x += ballW
+        text.textAlign = Paint.Align.LEFT
+        text.color = Color.WHITE
+        canvas.drawText(setup.name(player).take(14), x, baseline, text)
         x += nameW
-        for (col in columns) {
+        text.textAlign = Paint.Align.CENTER
+        for (set in sets) {
+            text.color = if (set[row] > set[1 - row]) Color.WHITE else Color.argb(150, 255, 255, 255)
+            canvas.drawText("${set[row]}", x + colW / 2, baseline, text)
             x += colW
-            canvas.drawText("${col[row]}", x, baseline, white.apply { textAlign = Paint.Align.RIGHT })
         }
-        x += ptsW
-        canvas.drawText(labels[row], x, baseline, yellow.apply { textAlign = Paint.Align.RIGHT })
+        if (showGames) {
+            text.color = Color.WHITE
+            canvas.drawText("${s.games[row]}", x + colW / 2, baseline, text)
+        }
+        text.color = Color.rgb(11, 31, 58)
+        canvas.drawText(labels[row], bodyW + ptsW / 2, baseline, text)
     }
     return bitmap
 }
+
+private val ACCENT = Color.rgb(215, 244, 74)
+
+private fun fill(color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }

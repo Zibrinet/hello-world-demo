@@ -4,10 +4,9 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,8 +21,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            TennisTheme {
                 Surface(Modifier.fillMaxSize()) { App(this) }
             }
         }
@@ -46,10 +46,11 @@ private const val HOME = "home"
 private const val SETUP = "setup"
 private const val RECORD = "record:"
 private const val MATCH = "match:"
+private const val SCORE = "score:"
 
 @Composable
 private fun App(activity: MainActivity) {
-    // "home", "setup", "record:<folder>" or "match:<folder>"; saveable so a rotation keeps the screen.
+    // "home", "setup", or "<screen>:<match folder>"; saveable so the screen survives the app being recreated.
     var screen by rememberSaveable { mutableStateOf(HOME) }
     fun session(prefix: String) = SessionDir(File(activity.sessionsRoot, screen.removePrefix(prefix)))
     when {
@@ -69,6 +70,11 @@ private fun App(activity: MainActivity) {
             onFinished = { screen = MATCH + it.dir.name },
             onCancel = { screen = HOME },
         )
-        screen.startsWith(MATCH) -> MatchScreen(session(MATCH), onBack = { screen = HOME })
+        screen.startsWith(MATCH) -> MatchScreen(
+            session(MATCH),
+            onBack = { screen = HOME },
+            onScore = { screen = SCORE + screen.removePrefix(MATCH) },
+        )
+        screen.startsWith(SCORE) -> ScoringScreen(session(SCORE), onDone = { screen = MATCH + screen.removePrefix(SCORE) })
     }
 }
