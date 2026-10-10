@@ -16,3 +16,6 @@ One line each, newest last. Where a line contradicts docs/BRIEF.md, this file wi
 - 2026-10-10 Court-corner calibration is left out of the app until M2 needs it; it adds a setup step the owner gains nothing from yet.
 - 2026-10-10 APK signing key is committed (android/app/tenniscut.keystore) so every build installs over the last one. Personal sideload only; never reuse it.
 - 2026-10-10 `a_starts_near` in setup.json is optional (default true); the app does not ask for it.
+- 2026-10-10 v0.2: the owner found on-court marking unusable. Points now come from audio rallies, and the owner scores them after the match ("Score the points": each rally loops, tap who won). This replaces SwingVision's AI scoring, its most-criticised feature, with a few minutes of exact human input. Clicker presses still pre-fill it. The pre-roll windows are gone from the app.
+- 2026-10-10 v0.2 stats are only what scored rallies support: points won, serve/return points won, short (1-4) vs long (5+) rallies won, average/longest rally. Shot counts are audio hits, labelled as estimates. No speed, line calls or heatmaps (they need ball tracking).
+- 2026-10-10 v0.2 the app follows the phone's orientation (upright or sideways) and locks it when recording starts, so a video never changes orientation mid-match.
