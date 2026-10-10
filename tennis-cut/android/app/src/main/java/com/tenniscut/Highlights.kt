@@ -54,34 +54,51 @@ fun videoInfo(video: File): VideoInfo {
     }
 }
 
-/** Cuts every point out of the match, burns in the score, saves one video to the gallery. */
-suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (Int) -> Unit): Uri =
+private class Segment(val start: Double, val end: Double, val board: Bitmap?)
+
+/**
+ * Cuts every point out of the match and saves one video to the gallery. If points were marked,
+ * each clip carries the score; if not, rallies are found from the sound and there is no score.
+ */
+suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (String, Int) -> Unit): Uri =
     withContext(Dispatchers.Main) {
         val setup = session.readSetup()
         val info = videoInfo(session.video)
-        val points = pointsFrom(setup, resolveMarkers(session.readMarkers()), info.durationS)
-        require(points.isNotEmpty()) { "No points were marked in this match." }
+        val presses = resolveMarkers(session.readMarkers())
+        val segments = if (presses.isNotEmpty()) {
+            pointsFrom(setup, presses, info.durationS).map {
+                Segment(it.start, it.end, scoreboardBitmap(setup, it.before, info.height))
+            }
+        } else {
+            val env = withContext(Dispatchers.Default) {
+                AutoCut.envelope(session.video) { onProgress("Finding the rallies", (it * 100).toInt()) }
+            }
+            AutoCut.rallies(AutoCut.hits(env), info.durationS).map { Segment(it.first, it.second, null) }
+        }
+        require(segments.isNotEmpty()) { "No points were found in this recording." }
 
-        val items = points.map { p ->
+        val items = segments.map { seg ->
             val clip = MediaItem.Builder()
                 .setUri(Uri.fromFile(session.video))
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs((p.start * 1000).toLong())
-                        .setEndPositionMs((p.end * 1000).toLong())
+                        .setStartPositionMs((seg.start * 1000).toLong())
+                        .setEndPositionMs((seg.end * 1000).toLong())
                         .build()
                 )
                 .build()
-            val board = BitmapOverlay.createStaticBitmapOverlay(
-                scoreboardBitmap(setup, p.before, info.height),
-                StaticOverlaySettings.Builder()
-                    .setOverlayFrameAnchor(-1f, 1f) // the board's top-left corner...
-                    .setBackgroundFrameAnchor(-0.97f, 0.94f) // ...sits near the video's top-left corner
-                    .build(),
-            )
-            EditedMediaItem.Builder(clip)
-                .setEffects(Effects(listOf(), listOf(OverlayEffect(ImmutableList.of(board)))))
-                .build()
+            val item = EditedMediaItem.Builder(clip)
+            if (seg.board != null) {
+                val overlay = BitmapOverlay.createStaticBitmapOverlay(
+                    seg.board,
+                    StaticOverlaySettings.Builder()
+                        .setOverlayFrameAnchor(-1f, 1f) // the board's top-left corner...
+                        .setBackgroundFrameAnchor(-0.97f, 0.94f) // ...sits near the video's top-left corner
+                        .build(),
+                )
+                item.setEffects(Effects(listOf(), listOf(OverlayEffect(ImmutableList.of(overlay)))))
+            }
+            item.build()
         }
         val composition = Composition.Builder(EditedMediaItemSequence.Builder(items).build()).build()
         val out = File(session.dir, "highlights.mp4").also { it.delete() }
@@ -102,7 +119,7 @@ suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (I
                 val holder = ProgressHolder()
                 while (true) {
                     if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-                        onProgress(holder.progress)
+                        onProgress("Making the video", holder.progress)
                     }
                     delay(500)
                 }

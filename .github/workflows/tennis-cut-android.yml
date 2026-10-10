@@ -1,0 +1,36 @@
+name: Build Tennis Cut app
+
+on:
+  push:
+    branches: [ccr-5836f692-no9zuc]
+    paths: ["tennis-cut/android/**", ".github/workflows/tennis-cut-android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tennis-cut/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Test and build
+        run: gradle --no-daemon testDebugUnitTest assembleRelease
+      - name: Publish the APK as the "tennis-cut-latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk TennisCut.apk
+          gh release delete tennis-cut-latest --yes --cleanup-tag || true
+          gh release create tennis-cut-latest TennisCut.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Tennis Cut (latest build)" --notes "Built from $GITHUB_SHA"

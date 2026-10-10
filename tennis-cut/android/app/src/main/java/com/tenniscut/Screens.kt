@@ -365,18 +365,18 @@ fun MatchScreen(session: SessionDir, onBack: () -> Unit) {
         val duration = runCatching { videoInfo(session.video).durationS }.getOrDefault(Double.MAX_VALUE)
         pointsFrom(setup, resolveMarkers(session.readMarkers()), duration)
     }
-    var progress by remember { mutableStateOf<Int?>(null) }
+    var progress by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var highlights by remember { mutableStateOf(session.highlightsUri) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     BackHandler(enabled = progress == null, onBack = onBack)
 
     fun make() {
-        progress = 0
+        progress = "Starting" to 0
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         scope.launch {
             try {
-                highlights = makeHighlights(context, session) { progress = it }
+                highlights = makeHighlights(context, session) { stage, pct -> progress = stage to pct }
             } catch (e: Exception) {
                 error = "Making the video failed: ${e.message}"
             } finally {
@@ -397,8 +397,8 @@ fun MatchScreen(session: SessionDir, onBack: () -> Unit) {
             val current = progress
             when {
                 current != null -> {
-                    Text("Making the highlight video… $current%")
-                    LinearProgressIndicator({ current / 100f }, Modifier.fillMaxWidth())
+                    Text("${current.first}… ${current.second}%")
+                    LinearProgressIndicator({ current.second / 100f }, Modifier.fillMaxWidth())
                     Text("Keep the app open on this screen. It takes a few minutes.",
                         style = MaterialTheme.typography.bodySmall)
                 }
@@ -413,8 +413,13 @@ fun MatchScreen(session: SessionDir, onBack: () -> Unit) {
                     Text("Also saved in your Gallery, in the \"Tennis Cut\" album.", style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(::make) { Text("Make it again") }
                 }
-                points.isEmpty() -> Text("No points were marked, so there is nothing to cut.")
-                else -> BigButton("Make highlight video", Color(0xFF2E7D32), ::make)
+                else -> {
+                    if (points.isEmpty()) {
+                        Text("No points were marked, so the app will find the rallies from the sound of the ball. " +
+                            "The video will have no score on it.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    BigButton("Make highlight video", Color(0xFF2E7D32), ::make)
+                }
             }
             if (progress == null) {
                 OutlinedButton({ confirmDelete = true }) { Text("Delete this match") }
