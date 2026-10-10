@@ -38,7 +38,7 @@ def process(session: Path, pre_roll: float) -> None:
 
     presses, warnings = segment.resolve_markers(markers)
     points = segment.points_from_presses(presses, video["duration"], pre_roll)
-    state = sc.initial(setup["first_server"], setup["a_starts_near"])
+    state = sc.initial(setup["first_server"], setup.get("a_starts_near", True))
     boards = []
     after_match = 0
     for p in points:
@@ -78,7 +78,7 @@ def process(session: Path, pre_roll: float) -> None:
         "players": setup["players"],
         "format": setup["format"],
         "first_server": setup["first_server"],
-        "a_starts_near": setup["a_starts_near"],
+        "a_starts_near": setup.get("a_starts_near", True),
         **({"calib": json.loads(calib_path.read_text())} if calib_path.exists() else {}),
         "markers": markers,
         "points": points,

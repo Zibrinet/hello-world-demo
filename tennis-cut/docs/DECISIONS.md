@@ -11,3 +11,8 @@ One line each, newest last. Where a line contradicts docs/BRIEF.md, this file wi
 - 2026-10-10 Ingest skips the 512×288 ML proxy until M2; nothing in M1 reads it.
 - 2026-10-10 (M1b) Confirm presses with a beep, not haptics: the phone is on the fence, so nobody feels a vibration and it shakes the frame the homography depends on.
 - 2026-10-10 (M1b) Undo = long press or 3 quick presses: many cheap shutter remotes send key-down/up instantly however long you hold.
+- 2026-10-10 The owner is not technical and chose phone-only: the app makes the highlight video itself (Media3 Transformer, scoreboard as a bitmap overlay, saved to the Gallery). The laptop pipeline stays for M2+ analysis and reads the same session folder.
+- 2026-10-10 The app has big on-screen "won"/undo buttons as well as clicker support, for testing before a clicker arrives.
+- 2026-10-10 Court-corner calibration is left out of the app until M2 needs it; it adds a setup step the owner gains nothing from yet.
+- 2026-10-10 APK signing key is committed (android/app/tenniscut.keystore) so every build installs over the last one. Personal sideload only; never reuse it.
+- 2026-10-10 `a_starts_near` in setup.json is optional (default true); the app does not ask for it.
