@@ -16,6 +16,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
@@ -96,7 +97,7 @@ suspend fun makeHighlights(context: Context, session: SessionDir, onProgress: (S
                         .setBackgroundFrameAnchor(-0.97f, 0.94f) // ...sits near the video's top-left corner
                         .build(),
                 )
-                item.setEffects(Effects(listOf(), listOf(OverlayEffect(ImmutableList.of(overlay)))))
+                item.setEffects(Effects(listOf(), listOf(OverlayEffect(ImmutableList.of<TextureOverlay>(overlay)))))
             }
             item.build()
         }
